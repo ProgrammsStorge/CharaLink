@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Title</title>
+</head>
+<body>
+<video autoplay muted playsinline style="display:none;"></video>
+    <script>
+
+var timer_max=0
+var max_volume=0
+      var video;
+      var webcamStream;
+    function startMonitoring() {
+navigator.mediaDevices.getUserMedia({
+  audio: true,
+  video: true
+},
+function(localMediaStream) {
+                  video = document.querySelector('video');
+                 video.srcObject=localMediaStream;
+                 webcamStream = localMediaStream;
+              })
+  .then(function(stream) {
+    const audioContext = new AudioContext();
+    const analyser = audioContext.createAnalyser();
+    const microphone = audioContext.createMediaStreamSource(stream);
+    const scriptProcessor = audioContext.createScriptProcessor(2048, 1, 1);
+
+    analyser.smoothingTimeConstant = 0.8;
+    analyser.fftSize = 1024;
+
+    microphone.connect(analyser);
+    analyser.connect(scriptProcessor);
+    scriptProcessor.connect(audioContext.destination);
+    scriptProcessor.onaudioprocess = function() {
+      const array = new Uint8Array(analyser.frequencyBinCount);
+      analyser.getByteFrequencyData(array);
+      const arraySum = array.reduce((a, value) => a + value, 0);
+      const average = arraySum / array.length;
+      console.log(Math.round(average));
+       if (timer_max==100){
+       console.log("Max " + max_volume);
+       timer_max+=1
+       }
+      if (timer_max<100){
+        timer_max+=1
+        if (average>max_volume) max_volume=average;
+      }
+
+      else if (Math.round(average)>max_volume) {
+     //stream.getTracks().forEach(track => track.stop());
+      stream.getTracks().forEach(track => track.stop());
+        console.log("here");
+
+         var recognizer = new webkitSpeechRecognition();
+recognizer.interimResults = true;
+
+// Какой язык будем распознавать?
+recognizer.lang = 'ru-Ru';
+
+// Используем колбек для обработки результатов
+recognizer.onresult = function (event) {
+  var result = event.results[event.resultIndex];
+  if (result.isFinal) {
+//alert('Вы сказали: ' + result[0].transcript);
+  if (!video) {
+    console.error("Видео не загружено");
+    return;
+  }
+  const canvas = document.createElement('canvas');
+  const ctx = canvas.getContext('2d');
+
+  // Устанавливаем размеры canvas равными размеру видео
+  canvas.width = video.videoWidth;
+  canvas.height = video.videoHeight;
+
+  // Рисуем текущий кадр
+  ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+  // Получаем данные в формате JPEG
+  const dataUrl = canvas.toDataURL('image/jpeg');
+fetch('https://robotapi-80714-default-rtdb.firebaseio.com/link.json')
+  .then(response2 => response2.json())
+  .then(data => {
+    console.log(data);
+
+    // Теперь используем data для второго запроса
+    return fetch(data.replace(/["']/g, '') + '/cat', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ "speech": result[0].transcript, "image": dataUrl }) // ❗ result должен быть определён
+    });
+  })
+  .then(response => response.json()) // если сервер возвращает JSON
+  .then(result => console.log(result))
+  .catch(error => console.error('Ошибка:', error));
+
+console.log(data.replace(/["]/g, '')+'/cat')
+    const base64Wav = response.tts; // ваш base64
+console.log(base64Wav)
+// Декодируем base64 в буфер
+const binaryString = atob(base64Wav);
+const len = binaryString.length;
+const bytes = new Uint8Array(len);
+for (let i = 0; i < len; i++) {
+    bytes[i] = binaryString.charCodeAt(i);
+}
+
+// Создаём Blob из байтов
+const blob = new Blob([bytes], { type: 'audio/wav' });
+
+// Создаём URL для Blob
+const url = URL.createObjectURL(blob);
+
+// Воспроизводим
+const audio = new Audio(url);
+audio.play();
+
+// Очищаем
+audio.onended = () => URL.revokeObjectURL(url);
+
+    setTimeout(startMonitoring, 100);
+  } else {
+    console.log('Промежуточный результат: ', result[0].transcript);
+  }
+};
+
+// Начинаем слушать микрофон и распознавать голос
+recognizer.start();
+      }
+
+      // colorPids(average);
+    };
+  })
+  .catch(function(err) {
+    /* handle the error */
+    console.error(err);
+  });
+        }
+        setTimeout(startMonitoring, 100);
+    </script>
+</body>
+</html>
